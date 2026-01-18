@@ -1,0 +1,26 @@
+name: Run Scraper
+
+on:
+  schedule:
+    - cron: '0 */6 * * *' # Run every 6 hours
+  workflow_dispatch: # Allow manual trigger from GitHub UI
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: true
+
+      - name: Run Scraper
+        env:
+          DB_DSN: ${{ secrets.DB_DSN }}
+        run: |
+          cd backend
+          go run cmd/scraper/main.go
