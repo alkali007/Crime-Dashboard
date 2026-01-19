@@ -55,8 +55,8 @@ graph TD
     B -->|Search News| C[Reputable News Portals]
     B -->|Extract JSON| D[PostgreSQL - Supabase]
     E[Golang API Server] -->|Reads| D
-    F[Next.js Dashboard] -->|Fetches| E
-    G[User Browser] -->|Interacts| F
+    E <-->|JSON Data| F[Next.js Dashboard]
+    F <-->|Interacts| G[User Browser]
 ```
 
 ---
