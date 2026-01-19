@@ -9,9 +9,10 @@ import (
 )
 
 func main() {
-	// Load .env file
-	_ = godotenv.Load()
-	_ = godotenv.Load("../../.env")
+	// Use Overload instead of Load because the user has system env vars set to 'no'
+	// which blocks Load() from working. Overload() will prioritize the .env file.
+	_ = godotenv.Overload()
+	_ = godotenv.Overload("../../.env")
 
 	log.Println("Starting Scraper Job...")
 	database.Connect()

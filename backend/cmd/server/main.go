@@ -12,12 +12,9 @@ import (
 )
 
 func main() {
-	// Load .env file if it exists
-	if err := godotenv.Load("../../.env"); err != nil {
-		// Try looking in current directory too, handling different run contexts
-		_ = godotenv.Load()
-		// We don't fatal here because on production (Render), there is no .env file,
-		// it uses real env vars. So we just ignore the error or log it as info.
+	// Use Overload instead of Load to ensure .env values take precedence over system env vars
+	if err := godotenv.Overload("../../.env"); err != nil {
+		_ = godotenv.Overload()
 		log.Println("Info: No .env file found or error loading it. Using system env vars.")
 	}
 

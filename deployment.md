@@ -1,86 +1,68 @@
-# Deployment Guide: Waspada Bandung
+# 🚀 Automated Deployment & Architecture Guide
 
-This guide explains how to deploy the Crime Dashboard for free using **Supabase** (Database), **Render** (Backend), and **Vercel** (Frontend).
+This guide explains how to deploy the **Waspada Bandung** system and, more importantly, **how it all works together**.
 
-## 1. Database (Supabase)
+---
 
-1.  **Create Account/Login**: Go to [supabase.com](https://supabase.com/).
-2.  **New Project**: Create a new project. Give it a name (e.g., `bandung-crime-db`) and a secure password.
-3.  **Get Connection String**:
-    -   Go to **Project Settings** -> **Database**.
-    -   Under **Connection Parameters**, find the **URI** (Mode: Session).
-    -   It should look like: `postgresql://postgres:[YOUR-PASSWORD]@db.xxxx.supabase.co:5432/postgres`
-    -   **Save this string**. You will need it for the Backend.
+## 🧩 Part 1: How the System Works (Architecture)
 
-## 2. Backend (Render)
+To make this app global, we split it into four specialized parts:
 
-1.  **Create Account/Login**: Go to [render.com](https://render.com/).
-2.  **Connect GitHub**: detailed instructions are better if you push this code to your own GitHub repo first.
-    *   *If you haven't pushed to GitHub yet, do checking "Create a new repository on the command line" on GitHub and push this code.*
-3.  **New Web Service**:
-    -   Click **New +** -> **Web Service**.
-    -   Select your repository `Crime-Dashboard`.
-4.  **Configure**:
-    -   **Name**: `crime-dashboard-backend`
-    -   **Runtime**: **Go**
-    -   **Build Command**: `cd backend && go build -o server cmd/server/main.go`
-    -   **Start Command**: `cd backend && ./server`
-    -   **Region**: Singapore (likely closest to Bandung) or whatever is default free.
-    -   **Instance Type**: **Free**.
-5.  **Environment Variables**:
-    -   Scroll down to **Environment Variables**.
-    -   Add Key: `DB_DSN`
-    -   Value: Paste your Supabase Connection String from Step 1.
-6.  **Deploy**: Click **Create Web Service**.
-    -   Wait for deployment to finish.
-    -   **Copy the URL** (e.g., `https://crime-dashboard-backend.onrender.com`). You need this for the Frontend.
+1.  **Memory (Database - Supabase)**: Where we store districts and crime reports.
+2.  **Brain (Backend API - Koyeb)**: A Go program that talks to the database and gives data to the website.
+3.  **Face (Frontend UI - Vercel)**: The beautiful Map and Feed that users see.
+4.  **Worker (Scraper - GitHub Actions)**: A background script that finds new news every 6 hours.
 
-## 2. Alternative Backend (Koyeb) - If Render fails
-**Koyeb** is excellent and often doesn't require a credit card for the "Free Forever" tier.
+### 🐳 What is a Dockerfile? (The "Recipe")
+Think of the **Dockerfile** in the `backend` folder as a **Recipe**. 
+Instead of you manually installing Go, setting paths, and clicking "Run" on a remote server, the Dockerfile tells the cloud (Koyeb):
+- *"Start with a clean Linux computer."*
+- *"Install Go 1.24."*
+- *"Copy my code into this folder."*
+- *"Compile the code and start the server on port 8080."*
 
-1.  **Login**: [koyeb.com](https://www.koyeb.com/).
-2.  **Deploy**: Click **Create App** -> **GitHub**.
-3.  **Select Repo**: Choose `Crime-Dashboard`.
-4.  **Builder**: Choose **Go** (Buildpack).
-5.  **Settings**:
-    -   **Work Directory**: `backend`
-    -   **Build Command**: `go build -o server cmd/server/main.go`
-    -   **Run Command**: `./server`
-    -   **Privileged**: Unchecked (Leave blank).
-6.  **Environment Variables**:
-    -   Add `DB_DSN` = (Your Supabase URL).
-7.  **Deploy**. Copy the `xxxx.koyeb.app` URL.
+This ensures that if the app works on your computer, it **will** work on the server exactly the same way.
 
-### 2.1 Backend Scraper (GitHub Actions - Free)
-We will use **GitHub Actions** to run the scraper automatically for free.
+---
 
-1.  **Go to your GitHub Repo**.
-2.  Click **Settings** -> **Secrets and variables** -> **Actions**.
-3.  Click **New repository secret**.
-    -   Name: `DB_DSN`
-    -   Value: (Your Supabase Connection String).
-4.  **Done!**
-    -   The scraper is already configured in `.github/workflows/scraper.yml`.
-    -   It will run everyday every 6 hours.
-    -   To test it immediately: Go to **Actions** tab -> **Run Scraper** -> **Run workflow**.
+## 🛠️ Part 2: Deployment Steps
 
-## 3. Frontend (Vercel)
+### Step 1: Push to GitHub
+Before starting, ensure your local code is uploaded to a private or public **GitHub repository**. Both Vercel and Koyeb will "watch" this repo for updates.
 
-1.  **Create Account/Login**: Go to [vercel.com](https://vercel.com/).
-2.  **Import Project**:
-    -   Click **Add New...** -> **Project**.
-    -   Select your `Crime-Dashboard` repository.
-3.  **Configure**:
-    -   **Framework Preset**: Next.js.
-    -   **Root Directory**: **IMPORTANT**. Click **Edit** and select `frontend`. Use **`frontend`** as the root, otherwise the build will fail.
+### Step 2: Backend API (Koyeb)
+Koyeb is your "Brain" hosting.
+1.  **Join**: [koyeb.com](https://www.koyeb.com/).
+2.  **Create Service**: Click **GitHub**, select `Crime-Dashboard`.
+3.  **Settings**:
+    -   **Work Directory**: `backend` (This tells Koyeb where the `Dockerfile` is).
+    -   **Instance Type**: `Nano` (Free).
 4.  **Environment Variables**:
-    -   Add Key: `NEXT_PUBLIC_API_URL`
-    -   Value: The Render Backend URL from Step 2 (e.g., `https://crime-dashboard-backend.onrender.com`). **Note**: Ensure no trailing slash, or handle it carefully.
-5.  **Deploy**: Click **Deploy**.
-6.  **Done!** Your dashboard is live.
+    -   `DB_DSN`: Your PostgreSQL connection string.
+5.  **Result**: You get a URL (e.g., `https://xxxx.koyeb.app`). **Keep this URL.**
 
-## Troubleshooting
+### Step 3: Frontend (Vercel)
+Vercel is your "Face" hosting.
+1.  **Import**: [vercel.com](https://vercel.com/) -> Import your repo.
+2.  **Settings**:
+    -   **Root Directory**: `frontend`.
+3.  **Environment Variables**:
+    -   `NEXT_PUBLIC_API_URL`: Paste the Koyeb URL from Step 2.
+4.  **Deploy**: Your website is now live!
 
--   **CORS Issues**: The backend allows all origins (`*`) by default, so it should work.
--   **Database**: If backend fails to start, check `DB_DSN` in Render logs.
--   **Scraper**: If no data appears, run the scraper locally once pointing to the remote DB to populate initial data, or wait for the Cron Job.
+### Step 4: Automated Scraper (GitHub Actions)
+The "Worker" that runs for free.
+1.  **Repo Settings**: Go to GitHub -> `Settings` -> `Secrets` -> `Actions`.
+2.  **Add Secrets**:
+    -   `DB_DSN`: (Your Database URL).
+    -   `GOOGLE_API_KEY`: (Your Gemini API Key).
+3.  **Check**: Go to the `Actions` tab in GitHub to see the scraper running!
+
+---
+
+## 🔄 Summary: The "Push-to-Live" Flow
+Every time you change code locally and run `git push`:
+1.  **GitHub** tells Vercel & Koyeb: *"Hey, there is new code!"*
+2.  **Vercel** rebuilds the Map/UI.
+3.  **Koyeb** uses the `Dockerfile` to rebuild the API.
+4.  **Within 2 minutes**, your live website is updated automatically.
