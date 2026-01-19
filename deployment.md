@@ -1,68 +1,53 @@
 # 🚀 Automated Deployment & Architecture Guide
 
-This guide explains how to deploy the **Waspada Bandung** system and, more importantly, **how it all works together**.
+This guide explains how to deploy the **Waspada Bandung** system and how to avoid common "Mixed Content" security errors.
 
 ---
 
 ## 🧩 Part 1: How the System Works (Architecture)
 
-To make this app global, we split it into four specialized parts:
+1.  **Memory (Database - Supabase)**: PostgreSQL storage.
+2.  **Brain (Backend API - Koyeb)**: Serves data via JSON.
+3.  **Face (Frontend UI - Vercel)**: Next.js Dashboard.
+4.  **Worker (Scraper - GitHub Actions)**: Updates data every 6 hours.
 
-1.  **Memory (Database - Supabase)**: Where we store districts and crime reports.
-2.  **Brain (Backend API - Koyeb)**: A Go program that talks to the database and gives data to the website.
-3.  **Face (Frontend UI - Vercel)**: The beautiful Map and Feed that users see.
-4.  **Worker (Scraper - GitHub Actions)**: A background script that finds new news every 6 hours.
-
-### 🐳 What is a Dockerfile? (The "Recipe")
-Think of the **Dockerfile** in the `backend` folder as a **Recipe**. 
-Instead of you manually installing Go, setting paths, and clicking "Run" on a remote server, the Dockerfile tells the cloud (Koyeb):
-- *"Start with a clean Linux computer."*
-- *"Install Go 1.24."*
-- *"Copy my code into this folder."*
-- *"Compile the code and start the server on port 8080."*
-
-This ensures that if the app works on your computer, it **will** work on the server exactly the same way.
+### 🐳 The Role of Docker (Optional)
+The **Dockerfile** in the `backend` folder is an **optional** "Recipe".
+- **With Docker**: You have total control over the environment (Go version, dependencies).
+- **Without Docker**: Cloud providers (Koyeb/Render) can auto-detect Go code and build it themselves (Buildpacks).
+*This project supports both methods.*
 
 ---
 
 ## 🛠️ Part 2: Deployment Steps
 
 ### Step 1: Push to GitHub
-Before starting, ensure your local code is uploaded to a private or public **GitHub repository**. Both Vercel and Koyeb will "watch" this repo for updates.
+Ensure your code is in a public or private GitHub repository.
 
 ### Step 2: Backend API (Koyeb)
-Koyeb is your "Brain" hosting.
 1.  **Join**: [koyeb.com](https://www.koyeb.com/).
 2.  **Create Service**: Click **GitHub**, select `Crime-Dashboard`.
 3.  **Settings**:
-    -   **Work Directory**: `backend` (This tells Koyeb where the `Dockerfile` is).
-    -   **Instance Type**: `Nano` (Free).
+    -   **Work Directory**: `backend`.
+    -   **Deployment Method**: You can choose **Docker** (uses our Dockerfile) or **Buildpack** (auto-detects Go). Both work.
 4.  **Environment Variables**:
     -   `DB_DSN`: Your PostgreSQL connection string.
-5.  **Result**: You get a URL (e.g., `https://xxxx.koyeb.app`). **Keep this URL.**
+5.  **Result**: You get a URL (e.g., `https://xxxx.koyeb.app`).
 
 ### Step 3: Frontend (Vercel)
-Vercel is your "Face" hosting.
 1.  **Import**: [vercel.com](https://vercel.com/) -> Import your repo.
 2.  **Settings**:
     -   **Root Directory**: `frontend`.
 3.  **Environment Variables**:
-    -   `NEXT_PUBLIC_API_URL`: Paste the Koyeb URL from Step 2.
-4.  **Deploy**: Your website is now live!
-
-### Step 4: Automated Scraper (GitHub Actions)
-The "Worker" that runs for free.
-1.  **Repo Settings**: Go to GitHub -> `Settings` -> `Secrets` -> `Actions`.
-2.  **Add Secrets**:
-    -   `DB_DSN`: (Your Database URL).
-    -   `GOOGLE_API_KEY`: (Your Gemini API Key).
-3.  **Check**: Go to the `Actions` tab in GitHub to see the scraper running!
+    -   `NEXT_PUBLIC_API_URL`: **IMPORTANT: MUST START WITH HTTPS**. 
+        -   ✅ Correct: `https://xxxx.koyeb.app`
+        -   ❌ Incorrect: `http://xxxx.koyeb.app` (This will cause a "Mixed Content" error in your browser).
+4.  **Deploy**: Your website is live!
 
 ---
 
-## 🔄 Summary: The "Push-to-Live" Flow
-Every time you change code locally and run `git push`:
-1.  **GitHub** tells Vercel & Koyeb: *"Hey, there is new code!"*
-2.  **Vercel** rebuilds the Map/UI.
-3.  **Koyeb** uses the `Dockerfile` to rebuild the API.
-4.  **Within 2 minutes**, your live website is updated automatically.
+## ⚠️ Troubleshooting: The "Not Found" or Blank Map Error
+If your website loads but the Map/Feed stays empty, check your browser's **Network tab**:
+- **Mixed Content Error**: If your Vercel site is `https` but your API link is `http`, the browser will block the data for security. **Always use `https://`**.
+- **Trailing Slash**: Ensure your API URL does **not** end with a `/`.
+- **Redeploy**: If you update an Environment Variable in Vercel, you **must** "Redeploy" for the change to take effect.
