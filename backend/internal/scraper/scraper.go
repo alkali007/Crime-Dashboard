@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand"
 	"os"
 	"strings"
 	"time"
@@ -82,90 +83,77 @@ func Run() {
 		return
 	}
 
+	// 1. SELECT TARGETS IN GO, NOT AI
+	// Randomize the district list
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	shuffled := make([]models.District, len(InitialDistrictData))
+	copy(shuffled, InitialDistrictData)
+	r.Shuffle(len(shuffled), func(i, j int) { shuffled[i], shuffled[j] = shuffled[j], shuffled[i] })
+
+	// Select top 15
+	selectedDistricts := shuffled[:15]
+
+	// 2. PROCESS IN BATCHES (Crucial for Search Tool Accuracy)
+	// If we send 15 at once, the search tool will skip many. Sending 3 at a time ensures high fidelity.
+	batchSize := 3
+
+	for i := 0; i < len(selectedDistricts); i += batchSize {
+		end := i + batchSize
+		if end > len(selectedDistricts) {
+			end = len(selectedDistricts)
+		}
+
+		batch := selectedDistricts[i:end]
+		var districtNames []string
+		for _, d := range batch {
+			districtNames = append(districtNames, d.Name)
+		}
+
+		log.Printf("Processing Batch %d/%d: %v", (i/batchSize)+1, 15/batchSize, districtNames)
+		processBatch(ctx, client, districtNames)
+
+		// Sleep briefly to avoid rate limits (429)
+		time.Sleep(2 * time.Second)
+	}
+}
+
+func processBatch(ctx context.Context, client *genai.Client, targets []string) {
+	// 3. REFINE THE PROMPT FOR THE SPECIFIC BATCH
+	// We inject the specific names into the prompt so the AI doesn't have to choose.
+	targetString := strings.Join(targets, ", ")
+
+	userPrompt := fmt.Sprintf(`
+You are a Crime Data Extractor equipped with Google Search.
+
+Task: Find recent criminal news (last 12 months) specifically for these Bandung districts: 
+[%s]
+
+Requirements:
+1. Use Google Search to find AT LEAST 2 distinct cases for EACH district listed above.
+2. Allowed Sources: news.detik.com, kompas.com, tribunnews.com, cnnindonesia.com, liputan6.com.
+3. Verification: You MUST verify the link works. The "source_url" must come directly from the Google Search tool result.
+4. If a district has no recent news, return the object with "district_name" set and other fields as "NaN".
+5. Do NOT invent data. If you can't find a link via Search, report NaN.
+
+Output Schema (JSON Array ONLY):
+[
+  {
+    "id": 0,
+    "district_name": "String",
+    "article_title": "String",
+    "description": "String (Summary)",
+    "incident_date": "ISO8601 String",
+    "source_url": "String (Exact URL found via Search)",
+    "category": "String"
+  }
+]
+`, targetString)
+
 	// Enable Google Search tool for source grounding
 	var tools []*genai.Tool
 	tools = append(tools, &genai.Tool{
 		GoogleSearch: &genai.GoogleSearch{},
 	})
-
-	userPrompt := `
-You are acting as a Data Scraping Specialist with experience in news data extraction and validation.
-
-Objective:
-Extract criminal case information occurring within districts of Bandung City from reputable news websites.
-
-Context:
-- Each district in Bandung City must have a minimum of 2 distinct criminal cases.
-- Only criminal cases published within the last 12 months from the current date are allowed.
-- To prevent model overload, randomly select exactly 15 districts per execution.
-- Only the selected districts must be processed and returned.
-- Cases must be sourced exclusively from the provided news websites.
-- Only information explicitly stated in the article may be used.
-
-Input:
-
-Districts (Bandung City):
-Andir, Astana Anyar, Antapani, Arcamanik, Babakan Ciparay, Bandung Kidul, Bandung Kulon,
-Batununggal, Bojongloa Kaler, Bojongloa Kidul, Buah Batu, Cibeunying Kidul,
-Cibeunying Kaler, Cibiru, Cicendo, Cidadap, Cinambo, Coblong, Gedebage,
-Kiaracondong, Lengkong, Mandalajati, Panyileukan, Rancasari, Regol,
-Sumur Bandung, Ujung Berung
-
-News Websites:
-- news.detik.com
-- cnnindonesia.com
-- en.antaranews.com
-- bbc.com
-- kompas.com
-- sindonews.com
-- tempo.com
-- liputan6.com
-- tribunnews.com
-
-Crime Categories:
-Assault, Battery, Rape, Murder, Burglary, Arson, Theft, Vandalism
-
-Constraints:
-- Randomly select exactly 15 districts from the list above per execution.
-- Minimum of 2 cases per district within the last 12 months (hard requirement).
-- If a selected district does not meet the minimum requirement,
-  return records for that district with all fields set to NaN.
-- Districts not selected must not appear in the output.
-- Use English language only.
-- Do not infer, assume, or fabricate any information.
-- Summaries must be strictly derived from article content.
-- Do not include cases older than 12 months.
-- Do not include duplicate cases across districts.
-- Output must strictly follow the defined schema and structure.
-
-Output Format:
-Return a JSON array of objects with the following schema. IMPORTANT: Output ONLY the raw JSON array, do not include any other text or explanation.
-
-{
-  "id": int8,
-  "district_name": text,
-  "article_title": text,
-  "description": text,
-  "incident_date": timestamptz,
-  "source_url": text,
-  "category": text
-}
-
-Evaluation Criteria:
-- Output must be machine-readable and executable with minimal modification.
-- Data accuracy must be verifiable against the source URL.
-- Temporal filtering must be strictly enforced.
-- Schema consistency is mandatory.
-`
-
-	contents := []*genai.Content{
-		{
-			Role: "user",
-			Parts: []*genai.Part{
-				genai.NewPartFromText(userPrompt),
-			},
-		},
-	}
 
 	config := &genai.GenerateContentConfig{
 		Tools: tools,
@@ -173,11 +161,7 @@ Evaluation Criteria:
 		SystemInstruction: &genai.Content{
 			Parts: []*genai.Part{
 				genai.NewPartFromText(
-					"You are an expert data scraping and extraction specialist for criminal news from Indonesian media. " +
-						"You must extract only verifiable information explicitly stated in articles, strictly limited to the last three months. " +
-						"If coverage is insufficient, you must return NaN values rather than fabricating data. " +
-						"All outputs must be source-traceable and strictly schema-compliant. " +
-						"Your response MUST be a valid JSON array only.",
+					"You are a strict JSON data extractor. You only output valid JSON arrays. You never output markdown text outside the JSON.",
 				),
 			},
 		},
@@ -186,14 +170,16 @@ Evaluation Criteria:
 	log.Println("Calling Gemini API...")
 
 	// We use GenerateContent (Unstreamed) to define easy JSON parsing
-	resp, err := client.Models.GenerateContent(ctx, model, contents, config)
+	resp, err := client.Models.GenerateContent(ctx, model, []*genai.Content{
+		{Role: "user", Parts: []*genai.Part{genai.NewPartFromText(userPrompt)}},
+	}, config)
 	if err != nil {
-		log.Printf("Error generating content: %v", err)
+		log.Printf("API Error on batch %s: %v", targetString, err)
 		return
 	}
 
 	if len(resp.Candidates) == 0 || len(resp.Candidates[0].Content.Parts) == 0 {
-		log.Println("No content generated.")
+		log.Println("No content returned for batch.")
 		return
 	}
 
@@ -203,15 +189,21 @@ Evaluation Criteria:
 		jsonText += part.Text
 	}
 
-	// Clean Markdown code blocks if present
-	jsonText = strings.TrimPrefix(jsonText, "```json")
-	jsonText = strings.TrimPrefix(jsonText, "```")
-	jsonText = strings.TrimSuffix(jsonText, "```")
+	// Heuristic cleaner for JSON
+	start := strings.Index(jsonText, "[")
+	end := strings.LastIndex(jsonText, "]")
+
+	if start == -1 || end == -1 {
+		log.Printf("Invalid JSON format received for batch %s. Raw: %s", targetString, jsonText)
+		return
+	}
+
+	cleanJSON := jsonText[start : end+1]
 
 	// Parse JSON
 	var scrapedData []ScrapedIncident
-	if err := json.Unmarshal([]byte(jsonText), &scrapedData); err != nil {
-		log.Printf("Error unmarshalling JSON: %v. Raw text: %s", err, jsonText)
+	if err := json.Unmarshal([]byte(cleanJSON), &scrapedData); err != nil {
+		log.Printf("Error unmarshalling JSON: %v. Raw text: %s", err, cleanJSON)
 		return
 	}
 
